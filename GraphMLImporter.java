@@ -54,7 +54,7 @@ public class GraphMLImporter {
       System.out.println ("  -b/--batchsize <batchsize>:        commit interval (0 = only commit at the end)");
       System.out.println ("  -s/--skipItem  <skipItems>:        number of items to skip (0 = nothing to skip)");
       System.out.println ("  -n/--numItems  <numItems>:         number of items to read (0 = until the ends)");
-      return;
+      System.exit(0);
     }
 
     isNeo4J = format.toUpperCase().equals("NEO4J") ? true : false;
@@ -75,20 +75,32 @@ public class GraphMLImporter {
 
   static void createGraph(Connection conn, String graphname)
   throws Exception {
-    System.out.println ("Creating PG graph "+graphname.toUpperCase());
-    String createPG = "BEGIN OPG_APIS.CREATE_PG(:1, DOP=>8, NUM_HASH_PTNS=>16, OPTIONS=>'SKIP_INDEX=T'); END;";
-    CallableStatement cs = conn.prepareCall(createPG);
-    cs.setString(1, graphname);
-    cs.execute();
+    DatabaseMetaData md = conn.getMetaData();
+    ResultSet t = md.getTables(null, null, graphname+"VT$", null);
+    if (t.next()) {
+      // Graph tables already exists
+      System.out.println ("PG graph "+graphname.toUpperCase()+ " already exists");
+      System.out.println ("  Use '-a append' to add to the existing graph");
+      System.out.println ("  Use '-a replace' to empty the existing graph and import");
+      System.exit(0);
+    }
+    else {
+      // Table does not exist
+      System.out.println ("Creating PG graph "+graphname.toUpperCase());
+      String createPG = "BEGIN OPG_APIS.CREATE_PG(:1, DOP=>8, NUM_HASH_PTNS=>16, OPTIONS=>'SKIP_INDEX=T'); END;";
+      CallableStatement cs = conn.prepareCall(createPG);
+      cs.setString(1, graphname);
+      cs.execute();
 
-    // Set all tables to nologging
-    cs = conn.prepareCall(createPG);
-    PreparedStatement ps;
-    conn.prepareStatement("alter table "+ graphname + "VT$ nologging").execute();
-    conn.prepareStatement("alter table "+ graphname + "GE$ nologging").execute();
-    conn.prepareStatement("alter table "+ graphname + "SS$ nologging").execute();
-    conn.prepareStatement("alter table "+ graphname + "GT$ nologging").execute();
-    conn.prepareStatement("alter table "+ graphname + "IT$ nologging").execute();
+      // Set all tables to nologging
+      cs = conn.prepareCall(createPG);
+      PreparedStatement ps;
+      conn.prepareStatement("alter table "+ graphname + "VT$ nologging").execute();
+      conn.prepareStatement("alter table "+ graphname + "GE$ nologging").execute();
+      conn.prepareStatement("alter table "+ graphname + "SS$ nologging").execute();
+      conn.prepareStatement("alter table "+ graphname + "GT$ nologging").execute();
+      conn.prepareStatement("alter table "+ graphname + "IT$ nologging").execute();
+    }
   }
 
   static void clearGraph(Connection conn, String graphname)
