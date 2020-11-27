@@ -51,7 +51,7 @@ public class GraphMLImporter {
       System.out.println ("  -g/--graphnam  <graphname>:        Name of the graph to create or load into");
       System.out.println ("  -a/--action    <action>:           [CREATE] or APPEND or REPLACE");
       System.out.println ("  -t/--format    <format>:           NEO4J or [TINKERPOP]");
-      System.out.println ("  -c/--batchsize <batchsize>:        commit interval (0 = only commit at the end)");
+      System.out.println ("  -b/--batchsize <batchsize>:        commit interval (0 = only commit at the end)");
       System.out.println ("  -s/--skipItem  <skipItems>:        number of items to skip (0 = nothing to skip)");
       System.out.println ("  -n/--numItems  <numItems>:         number of items to read (0 = until the ends)");
       return;
@@ -344,6 +344,12 @@ public class GraphMLImporter {
         "("  + ( (float)batchsize/(now.toEpochMilli()-instant.toEpochMilli())*1000) + " per second) " +
         "accumulated: " + (now.toEpochMilli()-start.toEpochMilli()) + " ms " +
         " "  + ( (float)(vCounter+eCounter)/(now.toEpochMilli()-start.toEpochMilli())*1000) + " per second) "
+      );
+      System.out.println(
+        "Memory use:" +
+        "\tFree MB:" + Runtime.getRuntime().freeMemory()/1024/1024 +
+        "\tUsed MB:" + Runtime.getRuntime().totalMemory()/1024/1024 +
+        "\tMax MB:"  + Runtime.getRuntime().maxMemory()/1024/1024
       );
       conn.commit();
       instant = now;

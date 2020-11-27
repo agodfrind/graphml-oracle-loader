@@ -60,7 +60,7 @@ Parameters:
   -g/--graphnam  <graphname>:        Name of the graph to create or load into
   -a/--action    <action>:           [CREATE] or APPEND or REPLACE
   -t/--format    <format>:           NEO4J or [TINKERPOP]
-  -c/--batchsize <batchsize>:        commit interval (0 = only commit at the end)
+  -b/--batchsize <batchsize>:        commit interval (0 = only commit at the end)
   -s/--skipItem  <skipItems>:        number of items to skip (0 = nothing to skip)
   -n/--numItems  <numItems>:         number of items to read (0 = until the ends)
 ```
@@ -113,7 +113,7 @@ By default, the above examples will create a new graph.
 
 **-t** or **--format**:   This specifies the format used in the GraphML file as *TINKERPOP* (default) or *NEO4J*.
 
-**-c** or **--batchsize**: commit interval (0 = only commit at the end)
+**-b** or **--batchsize**: commit interval (0 = only commit at the end)
 
 **-s** or **--skipItem**: number of items to skip (0 = nothing to skip)
 
