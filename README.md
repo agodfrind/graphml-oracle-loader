@@ -109,7 +109,7 @@ By default, the above examples will create a new graph.
 
 **-g** or **--graphnam**: Name of the graph to create or load into
 
-**-a** or **--action**:   Import action. *CREATE* (default) creates a new graph. *APPEND* adds to an existing graph. *REPLACE* truncates the existing graph and loads the new content.
+**-a** or **--action**:   Import action. *CREATE* (default) creates a new graph. *APPEND* adds to an existing graph. *REPLACE* drops the existing graph and creates a new one. *TRUNCATE* truncates the existing graph and loads the new content.
 
 **-t** or **--format**:   This specifies the format used in the GraphML file as *TINKERPOP* (default) or *NEO4J*.
 

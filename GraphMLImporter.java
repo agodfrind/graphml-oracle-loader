@@ -10,7 +10,7 @@ public class GraphMLImporter {
 
   static boolean isNeo4J;
   static Instant start;
-  static Instant instant;
+  static Instant previous;
 
   public static void main(String[] args) throws Exception {
 
@@ -49,7 +49,7 @@ public class GraphMLImporter {
       System.out.println ("  -u/--username  <User>:             Database user name");
       System.out.println ("  -p/--password  <Password>:         Database user password");
       System.out.println ("  -g/--graphnam  <graphname>:        Name of the graph to create or load into");
-      System.out.println ("  -a/--action    <action>:           [CREATE] or APPEND or REPLACE");
+      System.out.println ("  -a/--action    <action>:           [CREATE] or APPEND or REPLACE or TRUNCATE");
       System.out.println ("  -t/--format    <format>:           NEO4J or [TINKERPOP]");
       System.out.println ("  -b/--batchsize <batchsize>:        commit interval (0 = only commit at the end)");
       System.out.println ("  -s/--skipItem  <skipItems>:        number of items to skip (0 = nothing to skip)");
@@ -66,8 +66,12 @@ public class GraphMLImporter {
       case ("CREATE"):
         createGraph(conn, graphname.toUpperCase());
         break;
-      case ("REPLACE"):
+      case ("TRUNCATE"):
         clearGraph(conn, graphname.toUpperCase());
+        break;
+      case ("REPLACE"):
+        dropGraph(conn, graphname.toUpperCase());
+        createGraph(conn, graphname.toUpperCase());
         break;
     }
     processFile (filename, conn, graphname, batchsize, skipItems, numItems);
@@ -81,11 +85,12 @@ public class GraphMLImporter {
       // Graph tables already exists
       System.out.println ("PG graph "+graphname.toUpperCase()+ " already exists");
       System.out.println ("  Use '-a append' to add to the existing graph");
-      System.out.println ("  Use '-a replace' to empty the existing graph and import");
+      System.out.println ("  Use '-a truncate' to clear the existing graph before importing");
+      System.out.println ("  Use '-a replace' to drop and re-create the graph");
       System.exit(0);
     }
     else {
-      // Table does not exist
+      // Graph does not exist yet
       System.out.println ("Creating PG graph "+graphname.toUpperCase());
       String createPG = "BEGIN OPG_APIS.CREATE_PG(:1, DOP=>8, NUM_HASH_PTNS=>16, OPTIONS=>'SKIP_INDEX=T'); END;";
       CallableStatement cs = conn.prepareCall(createPG);
@@ -93,13 +98,12 @@ public class GraphMLImporter {
       cs.execute();
 
       // Set all tables to nologging
-      cs = conn.prepareCall(createPG);
-      PreparedStatement ps;
       conn.prepareStatement("alter table "+ graphname + "VT$ nologging").execute();
       conn.prepareStatement("alter table "+ graphname + "GE$ nologging").execute();
       conn.prepareStatement("alter table "+ graphname + "SS$ nologging").execute();
       conn.prepareStatement("alter table "+ graphname + "GT$ nologging").execute();
       conn.prepareStatement("alter table "+ graphname + "IT$ nologging").execute();
+      conn.prepareStatement("alter table "+ graphname + "VD$ nologging").execute();
     }
   }
 
@@ -110,6 +114,20 @@ public class GraphMLImporter {
     cs.setString(1, graphname);
     cs.execute();
     System.out.println ("Graph cleared");
+  }
+
+  static void dropGraph(Connection conn, String graphname)
+  throws Exception {
+    System.out.println ("Dropping PG graph "+graphname.toUpperCase());
+    CallableStatement cs = conn.prepareCall("begin opg_apis.drop_pg(:1); end;");
+    cs.setString(1, graphname);
+    try {
+      cs.execute();
+    } catch (SQLException e) {
+      if (e.getErrorCode() != 942)
+        throw e;
+    }
+    System.out.println ("Graph dropped");
   }
 
   static void processFile(
@@ -165,8 +183,8 @@ public class GraphMLImporter {
     if (skipItems > 0)
       System.out.println ("Skipping "+skipItems+" items ...");
 
-    instant = Instant.now();
-    start = instant;
+    start = Instant.now();
+    previous = start;
     while (xmlReader.hasNext()) {
       Integer xmlEvent = xmlReader.next();
 
@@ -242,8 +260,8 @@ public class GraphMLImporter {
             if (skipCounter-- <= 0) {
               if (skipCounter == -1 && skipItems > 0) {
                 System.out.println("... done skipping");
-                instant = Instant.now();
-                start = instant;
+                start = Instant.now();
+                previous = previous;
               }
               numCounter++;
               // If no properties exist for this vertex, then add a dummy blank property
@@ -270,8 +288,8 @@ public class GraphMLImporter {
             if (skipCounter-- <= 0) {
               if (skipCounter == -1 && skipItems > 0) {
                 System.out.println("... done skipping");
-                instant = Instant.now();
-                start = instant;
+                start = Instant.now();
+                previous = previous;
               }
               numCounter++;
               // If no properties exist for this edge, then add a dummy blank property
@@ -352,8 +370,8 @@ public class GraphMLImporter {
       System.out.println (
         Instant.now() + ": " +
         vCounter + " vertices, "+eCounter +" edges inserted " +
-        "in " + ( now.toEpochMilli()-instant.toEpochMilli() ) + " ms " +
-        "("  + ( (float)batchsize/(now.toEpochMilli()-instant.toEpochMilli())*1000) + " per second) " +
+        "in " + ( now.toEpochMilli()-previous.toEpochMilli() ) + " ms " +
+        "("  + ( (float)batchsize/(now.toEpochMilli()-previous.toEpochMilli())*1000) + " per second) " +
         "accumulated: " + (now.toEpochMilli()-start.toEpochMilli()) + " ms " +
         " "  + ( (float)(vCounter+eCounter)/(now.toEpochMilli()-start.toEpochMilli())*1000) + " per second) "
       );
@@ -364,7 +382,7 @@ public class GraphMLImporter {
         "\tMax MB:"  + Runtime.getRuntime().maxMemory()/1024/1024
       );
       conn.commit();
-      instant = now;
+      previous = now;
     }
   }
 
