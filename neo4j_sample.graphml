@@ -1,11 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <graphml xmlns="http://graphml.graphdrawing.org/xmlns" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xsi:schemaLocation="http://graphml.graphdrawing.org/xmlns http://graphml.graphdrawing.org/xmlns/1.0/graphml.xsd">
-<key id="born" for="node" attr.name="born"/>
+<key id="born" for="node" attr.name="born" attr.type="int"/>
 <key id="name" for="node" attr.name="name"/>
 <key id="tagline" for="node" attr.name="tagline"/>
 <key id="label" for="node" attr.name="label"/>
 <key id="title" for="node" attr.name="title"/>
-<key id="released" for="node" attr.name="released"/>
+<key id="released" for="node" attr.name="released" attr.type="int"/>
 <key id="roles" for="edge" attr.name="roles"/>
 <key id="label" for="edge" attr.name="label"/>
 <graph id="G" edgedefault="directed">
