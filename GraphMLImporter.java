@@ -11,6 +11,8 @@ public class GraphMLImporter {
   static boolean isNeo4J;
   static Instant start;
   static Instant previous;
+  static Map<String, String> keyIdMap = new HashMap<>();
+  static Map<String, Integer> keyTypeMap = new HashMap<>();
 
   public static void main(String[] args) throws Exception {
 
@@ -58,6 +60,10 @@ public class GraphMLImporter {
     }
 
     isNeo4J = format.toUpperCase().equals("NEO4J") ? true : false;
+
+    // Make sure we use a US locale. This is so that the database interprets '.' as decimal points
+    // when inserting numbers as strings
+    Locale.setDefault(Locale.US);
 
     System.out.println("Connecting to Database "+jdbcUrl);
     Connection conn = DriverManager.getConnection(jdbcUrl, username, password);
@@ -136,13 +142,11 @@ public class GraphMLImporter {
     System.out.println ("Processing file "+filename);
     XMLInputFactory inputFactory = XMLInputFactory.newInstance();
     XMLStreamReader xmlReader = inputFactory.createXMLStreamReader(new FileInputStream(filename));
-    Map<String, String> keyIdMap = new HashMap<>();
-    Map<String, String> keyTypesMaps = new HashMap<>();
 
     // Vertex Data
     long vid = 0;
     String vLabel = null;
-    Map<String, Object> vProps = null;
+    Map<String, String> vProps = null;
     boolean inV = false;
     Long vCounter = 0L;
 
@@ -151,16 +155,16 @@ public class GraphMLImporter {
     long svid = 0;
     long dvid = 0;
     String eLabel = null;
-    Map<String, Object> eProps = null;
+    Map<String, String> eProps = null;
     boolean inE = false;
     Long eCounter = 0L;
 
     // Insert statements
     PreparedStatement vInsert = conn.prepareStatement(
-      "INSERT INTO " + graphname + "VT$ (vid,vl,k,t,v) VALUES (?,?,?,?,?)"
+      "INSERT INTO " + graphname + "VT$ (vid,vl,k,t,v,vn) VALUES (?,?,?,?,?,?)"
     );
     PreparedStatement eInsert = conn.prepareStatement(
-      "INSERT INTO " + graphname + "GE$ (eid,svid,dvid,el,k,t,v) VALUES (?,?,?,?,?,?,?)"
+      "INSERT INTO " + graphname + "GE$ (eid,svid,dvid,el,k,t,v,vn) VALUES (?,?,?,?,?,?,?,?)"
     );
 
     // Label identifiers (passed as properties)
@@ -192,15 +196,30 @@ public class GraphMLImporter {
       if (xmlEvent.equals(XMLEvent.START_ELEMENT)) {
         String xmlTag = xmlReader.getName().getLocalPart();
         switch (xmlTag) {
+
           // Process <key> element
           // <key id="GENRE" for="node" attr.name="GENRE" attr.type="string"></key>
           case "key":
             String id = xmlReader.getAttributeValue(null, "id");
             String attributeName = xmlReader.getAttributeValue(null, "attr.name");
             String attributeType = xmlReader.getAttributeValue(null, "attr.type");
+            int attributeTypeCode = 1; // if not data type, assume string
             keyIdMap.put(id, attributeName);
-            keyTypesMaps.put(id, attributeType);
+            // Map the data types to the code in the Oracle PG graph format.
+            if (attributeType != null)
+              switch (attributeType) {
+                case "string":  attributeTypeCode = 1; break;
+                case "int":     attributeTypeCode = 2; break;
+                case "integer": attributeTypeCode = 2; break;
+                case "float":   attributeTypeCode = 3; break;
+                case "double":  attributeTypeCode = 4; break;
+                case "boolean": attributeTypeCode = 6; break;
+                case "long":    attributeTypeCode = 7; break;
+                default:        attributeTypeCode = 1; break;
+              }
+            keyTypeMap.put(id, attributeTypeCode);
             break;
+
           // Process <node> element
           // <node id="1"><data key="labelV">PERSON</data><data key="ROLE">political authority</data>...</node>
           case "node":
@@ -211,6 +230,7 @@ public class GraphMLImporter {
             inV = true;
             vProps = new HashMap<>();
             break;
+
           // Process <edge> element
           // <edge id="1000" source="1" target="2"><data key="labelE">COLLABORATES</data><data key="WEIGHT">1.0</data></edge>
           case "edge":
@@ -228,6 +248,7 @@ public class GraphMLImporter {
             inE = true;
             eProps = new HashMap<>();
             break;
+
           // Process <data> element (vertex/edge property)
           // <data key="COUNTRY">United States</data>
           case "data":
@@ -242,12 +263,12 @@ public class GraphMLImporter {
                 else
                   vLabel = value;
               else
-                vProps.put(key, typeCastValue(key, value, keyTypesMaps));
+                vProps.put(key,value);
             } else if (inE) {
               if (key.equals(eLabelKey))
                 eLabel = value;
               else
-                eProps.put(key, typeCastValue(key, value, keyTypesMaps));
+                eProps.put(key,value);
             }
             break;
         }
@@ -256,6 +277,8 @@ public class GraphMLImporter {
       } else if (xmlEvent.equals(XMLEvent.END_ELEMENT)) {
         String xmlTag = xmlReader.getName().getLocalPart();
         switch (xmlTag) {
+
+          // Process </node> element
           case "node":
             if (skipCounter-- <= 0) {
               if (skipCounter == -1 && skipItems > 0) {
@@ -264,9 +287,6 @@ public class GraphMLImporter {
                 previous = previous;
               }
               numCounter++;
-              // If no properties exist for this vertex, then add a dummy blank property
-              if (vProps.size()==0)
-                vProps.put(" ", " ");
               // If no label exists, use default label
               if (vLabel == null)
                 vLabel = vLabelDefault;
@@ -284,6 +304,7 @@ public class GraphMLImporter {
             }
             break;
 
+          // Process </edge> element
           case "edge":
             if (skipCounter-- <= 0) {
               if (skipCounter == -1 && skipItems > 0) {
@@ -292,9 +313,6 @@ public class GraphMLImporter {
                 previous = previous;
               }
               numCounter++;
-              // If no properties exist for this edge, then add a dummy blank property
-              if (eProps.size()==0)
-                eProps.put(" ", " ");
               // If no label exists, use default label
               if (eLabel == null)
                 eLabel = eLabelDefault;
@@ -329,33 +347,69 @@ public class GraphMLImporter {
   }
 
   // Write a vertex to database
-  static void writeVertex(PreparedStatement vInsert, Long vid, String vLabel, Map<String, Object> vProps)
+  static void writeVertex(PreparedStatement vInsert, Long vid, String vLabel, Map<String, String> vProps)
   throws Exception {
-    for (Map.Entry<String, Object> e : vProps.entrySet()) {
-      String k = e.getKey();
-      Object v = e.getValue();
-      vInsert.setLong   (1, vid);                   // VID (vertex id)
-      vInsert.setString (2, vLabel.toUpperCase());  // VL  (label)
-      vInsert.setString (3, k.toUpperCase());       // K   (property name)
-      vInsert.setLong   (4, 1);                     // T   (data type)
-      vInsert.setString (5, v.toString());          // V   (string value)
+    if (vProps.size() > 0) {
+      // Write all properties
+      for (Map.Entry<String, String> e : vProps.entrySet()) {
+        String k = e.getKey();
+        String v = e.getValue();
+        int t = keyTypeMap.get(k);
+        vInsert.setLong   (1, vid);                   // VID (vertex id)
+        vInsert.setString (2, vLabel.toUpperCase());  // VL  (label)
+        vInsert.setString (3, k.toUpperCase());       // K   (property name)
+        vInsert.setLong   (4, t);                     // T   (data type)
+        vInsert.setString (5, v);                     // V   (string value)
+        if (t==2|t==3||t==4||t==7)                    // Is this a numeric value ?
+          vInsert.setString (6, v);                   // VN  (numeric value)
+        else
+          vInsert.setString (6, null);                // VN  (numeric value) set to NULL
+        vInsert.addBatch();
+      }
+    } else {
+      // Write empty property (when a vertex has no properties)
+      vInsert.setLong   (1, vid);                     // VID (vertex id)
+      vInsert.setString (2, vLabel.toUpperCase());    // VL  (label)
+      vInsert.setString (3, null);                    // K   (property name)
+      vInsert.setString (4, null);                    // T   (data type)
+      vInsert.setString (5, null);                    // V   (string value)
+      vInsert.setString (6, null);                    // VN  (numeric value) set to NULL
       vInsert.addBatch();
     }
   }
 
   // Write an edge to database
-  static void writeEdge(PreparedStatement eInsert, Long eid, String eLabel, Long svid, Long dvid, Map<String, Object> eProps)
+  static void writeEdge(PreparedStatement eInsert, Long eid, String eLabel, Long svid, Long dvid, Map<String, String> eProps)
   throws Exception {
-    for (Map.Entry<String, Object> e : eProps.entrySet()) {
-      String k = e.getKey();
-      Object v = e.getValue();
-      eInsert.setLong   (1, eid);                   // EID (vertex id)
+    if (eProps.size() > 0) {
+      // Write all properties
+      for (Map.Entry<String, String> e : eProps.entrySet()) {
+        String k = e.getKey();
+        String v = e.getValue();
+        int t = keyTypeMap.get(k);
+        eInsert.setLong   (1, eid);                   // EID  (vertex id)
+        eInsert.setLong   (2, svid);                  // SVID (source vertex id)
+        eInsert.setLong   (3, dvid);                  // DVID (destination vertex id)
+        eInsert.setString (4, eLabel.toUpperCase());  // EL   (label)
+        eInsert.setString (5, k.toUpperCase());       // K    (property name)
+        eInsert.setLong   (6, t);                     // T    (data type)
+        eInsert.setString (7, v);                     // V    (string value)
+        if (t==2|t==3||t==4||t==7)                    // Is this a numeric value ?
+          eInsert.setString (8, v);                   // VN   (numeric value)
+        else
+          eInsert.setString (8, null);                // VN   (numeric value) set to NULL
+        eInsert.addBatch();
+      }
+    } else {
+      // Write empty property (when an edge has no properties)
+      eInsert.setLong   (1, eid);                   // EID  (vertex id)
       eInsert.setLong   (2, svid);                  // SVID (source vertex id)
       eInsert.setLong   (3, dvid);                  // DVID (destination vertex id)
-      eInsert.setString (4, eLabel.toUpperCase());  // EL  (label)
-      eInsert.setString (5, k.toUpperCase());       // K   (property name)
-      eInsert.setLong   (6, 1);                     // T   (data type)
-      eInsert.setString (7, v.toString());          // V   (string value)
+      eInsert.setString (4, eLabel.toUpperCase());  // EL   (label)
+      eInsert.setString (5, null);                  // K    (property name)
+      eInsert.setString (6, null);                  // T    (data type)
+      eInsert.setString (7, null);                  // V    (string value)
+      eInsert.setString (8, null);                  // VN   (numeric value) set to NULL
       eInsert.addBatch();
     }
   }
@@ -375,33 +429,17 @@ public class GraphMLImporter {
         "accumulated: " + (now.toEpochMilli()-start.toEpochMilli()) + " ms " +
         " "  + ( (float)(vCounter+eCounter)/(now.toEpochMilli()-start.toEpochMilli())*1000) + " per second) "
       );
+      /*
       System.out.println(
         "Memory use:" +
         "\tFree MB:" + Runtime.getRuntime().freeMemory()/1024/1024 +
         "\tUsed MB:" + Runtime.getRuntime().totalMemory()/1024/1024 +
         "\tMax MB:"  + Runtime.getRuntime().maxMemory()/1024/1024
       );
+      */
       conn.commit();
       previous = now;
     }
   }
 
-  // Cast property values to the proper data type
-  static Object typeCastValue(String key, String value, Map<String, String> keyTypes) {
-    String type = keyTypes.get(key);
-    if (null == type || type.equals("string"))
-        return value;
-    else if (type.equals("float"))
-        return Float.valueOf(value);
-    else if (type.equals("int"))
-        return Integer.valueOf(value);
-    else if (type.equals("double"))
-        return Double.valueOf(value);
-    else if (type.equals("boolean"))
-        return Boolean.valueOf(value);
-    else if (type.equals("long"))
-        return Long.valueOf(value);
-    else
-        return value;
-  }
 }
