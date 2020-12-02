@@ -8,7 +8,8 @@ import javax.xml.stream.events.*;
 
 public class GraphMLImporter {
 
-  static boolean isNeo4J;
+  static boolean isNeo4J = false;
+  static boolean isDeferred  = true;
   static Instant start;
   static Instant previous;
   static Map<String, String> keyIdMap = new HashMap<>();
@@ -40,6 +41,7 @@ public class GraphMLImporter {
         case "-b" : case "--batchsize": batchsize  = Integer.parseInt(args[i+1]); break;
         case "-s" : case "--skipItems": skipItems  = Integer.parseInt(args[i+1]); break;
         case "-n" : case "--numItems":  numItems   = Integer.parseInt(args[i+1]); break;
+        case "-i" : case "--deferred":  isDeferred = args[i+1].toUpperCase().equals("YES") ? true : false; break;
       }
       i++;
     }
@@ -56,6 +58,7 @@ public class GraphMLImporter {
       System.out.println ("  -b/--batchsize <batchsize>:        commit interval (0 = only commit at the end)");
       System.out.println ("  -s/--skipItem  <skipItems>:        number of items to skip (0 = nothing to skip)");
       System.out.println ("  -n/--numItems  <numItems>:         number of items to read (0 = until the ends)");
+      System.out.println ("  -i/--deferred  YES/NO:             YES: defer index creation / NO: update indexes while loading");
       System.exit(0);
     }
 
@@ -98,7 +101,12 @@ public class GraphMLImporter {
     else {
       // Graph does not exist yet
       System.out.println ("Creating PG graph "+graphname.toUpperCase());
-      String createPG = "BEGIN OPG_APIS.CREATE_PG(:1, DOP=>8, NUM_HASH_PTNS=>16, OPTIONS=>'SKIP_INDEX=T'); END;";
+      String createPG;
+      if (isDeferred) {
+        System.out.println ("Indexing is deferred");
+        createPG = "BEGIN OPG_APIS.CREATE_PG(:1, DOP=>8, NUM_HASH_PTNS=>16, OPTIONS=>'SKIP_INDEX=T'); END;";
+      } else
+        createPG = "BEGIN OPG_APIS.CREATE_PG(:1, DOP=>8, NUM_HASH_PTNS=>16); END;";
       CallableStatement cs = conn.prepareCall(createPG);
       cs.setString(1, graphname);
       cs.execute();
@@ -341,7 +349,19 @@ public class GraphMLImporter {
     }
     // Final commit
     commitBatch (vInsert,eInsert,vCounter,eCounter,-1,conn);
-    System.out.println ("Graph "+graphname.toUpperCase()+" imported");
+    // If requested, finish graph: populate VD and GT tables and create all indexes
+    if (isDeferred) {
+      Instant startFinish = Instant.now();
+      System.out.println ("Finishing graph: creating indexes");
+      String finishPG = "BEGIN OPG_APIS.MIGRATE_PG_TO_CURRENT(:1); END;";
+      CallableStatement cs = conn.prepareCall(finishPG);
+      cs.setString(1, graphname);
+      cs.execute();
+      System.out.println ("Graph "+graphname.toUpperCase()+" indexed in " +
+        ((Instant.now().toEpochMilli()-startFinish.toEpochMilli())/1000) + " sec ");
+    }
+    System.out.println ("Graph "+graphname.toUpperCase()+" imported in " +
+      ((Instant.now().toEpochMilli()-start.toEpochMilli())/1000) + " sec ");
     System.out.println (vCounter+" vertices");
     System.out.println (eCounter+" edges");
   }
@@ -362,6 +382,7 @@ public class GraphMLImporter {
         vInsert.setString (5, v);                     // V   (string value)
         if (t==2|t==3||t==4||t==7)                    // Is this a numeric value ?
           vInsert.setString (6, v);                   // VN  (numeric value)
+          // vInsert.setDouble (6, Double.parseDouble(v));                   // VN  (numeric value)
         else
           vInsert.setString (6, null);                // VN  (numeric value) set to NULL
         vInsert.addBatch();

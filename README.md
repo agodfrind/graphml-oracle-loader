@@ -119,6 +119,8 @@ By default, the above examples will create a new graph.
 
 **-n** or **--numItems**: number of items to read (0 = until the ends)
 
+**-i** or **--deferred**: YES or NO. If YES (the default), the graph is created without any index, and the GT and VD tables are only populated at the end of the import. If NO, the GT and VD tables are updated on the fly.
+
 ## Usage notes
 
 ### Batching
@@ -148,7 +150,7 @@ The log message shows the elapsed time and throughput for each batch of 10000 it
 
 ### Restart and selective loading
 
-In case of failure, you can skip the items already loaded by indicating the number of items loaded in the last log message. For example, to resume the  interrupted import above, specify the ***-skipItems*** parameters:
+In case of failure, you can skip the items already loaded by indicating the number of items loaded in the last log message. For example, to resume the  interrupted import above, specify the ***-skipItems*** parameter:
 
 ```
 $ java GraphMLImporter \
