@@ -9,7 +9,7 @@ import javax.xml.stream.events.*;
 public class GraphMLImporter {
 
   static boolean isNeo4J = false;
-  static boolean isDeferred  = true;
+  static boolean buildTopology = true;
   static Instant start;
   static Instant previous;
   static Map<String, String> keyIdMap = new HashMap<>();
@@ -41,7 +41,7 @@ public class GraphMLImporter {
         case "-b" : case "--batchsize": batchsize  = Integer.parseInt(args[i+1]); break;
         case "-s" : case "--skipItems": skipItems  = Integer.parseInt(args[i+1]); break;
         case "-n" : case "--numItems":  numItems   = Integer.parseInt(args[i+1]); break;
-        case "-i" : case "--deferred":  isDeferred = args[i+1].toUpperCase().equals("YES") ? true : false; break;
+        case "-o" : case "--topology":  buildTopology = args[i+1].toUpperCase().equals("YES") ? true : false; break;
       }
       i++;
     }
@@ -58,7 +58,7 @@ public class GraphMLImporter {
       System.out.println ("  -b/--batchsize <batchsize>:        commit interval (0 = only commit at the end)");
       System.out.println ("  -s/--skipItem  <skipItems>:        number of items to skip (0 = nothing to skip)");
       System.out.println ("  -n/--numItems  <numItems>:         number of items to read (0 = until the ends)");
-      System.out.println ("  -i/--deferred  YES/NO:             YES: defer index creation / NO: update indexes while loading");
+      System.out.println ("  -o/--topology  YES/NO:             [YES]: populate topology tables / NO: do not populate");
       System.exit(0);
     }
 
@@ -101,12 +101,7 @@ public class GraphMLImporter {
     else {
       // Graph does not exist yet
       System.out.println ("Creating PG graph "+graphname.toUpperCase());
-      String createPG;
-      if (isDeferred) {
-        System.out.println ("Indexing is deferred");
-        createPG = "BEGIN OPG_APIS.CREATE_PG(:1, DOP=>8, NUM_HASH_PTNS=>16, OPTIONS=>'SKIP_INDEX=T'); END;";
-      } else
-        createPG = "BEGIN OPG_APIS.CREATE_PG(:1, DOP=>8, NUM_HASH_PTNS=>16); END;";
+      String createPG = "BEGIN OPG_APIS.CREATE_PG(:1, DOP=>8, NUM_HASH_PTNS=>8, OPTIONS=>'SKIP_INDEX=T'); END;";
       CallableStatement cs = conn.prepareCall(createPG);
       cs.setString(1, graphname);
       cs.execute();
@@ -141,7 +136,6 @@ public class GraphMLImporter {
       if (e.getErrorCode() != 942)
         throw e;
     }
-    System.out.println ("Graph dropped");
   }
 
   static void processFile(
@@ -349,21 +343,34 @@ public class GraphMLImporter {
     }
     // Final commit
     commitBatch (vInsert,eInsert,vCounter,eCounter,-1,conn);
-    // If requested, finish graph: populate VD and GT tables and create all indexes
-    if (isDeferred) {
-      Instant startFinish = Instant.now();
-      System.out.println ("Finishing graph: creating indexes");
-      String finishPG = "BEGIN OPG_APIS.MIGRATE_PG_TO_CURRENT(:1); END;";
-      CallableStatement cs = conn.prepareCall(finishPG);
-      cs.setString(1, graphname);
-      cs.execute();
-      System.out.println ("Graph "+graphname.toUpperCase()+" indexed in " +
-        ((Instant.now().toEpochMilli()-startFinish.toEpochMilli())/1000) + " sec ");
-    }
+
+    // Log total import time
     System.out.println ("Graph "+graphname.toUpperCase()+" imported in " +
       ((Instant.now().toEpochMilli()-start.toEpochMilli())/1000) + " sec ");
-    System.out.println (vCounter+" vertices");
-    System.out.println (eCounter+" edges");
+
+    // Build topology and/or indexes
+    Instant startFinish = Instant.now();
+    String finishPG;
+    if (buildTopology) {
+      System.out.println ("Creating topology and indexes ...");
+      finishPG = "BEGIN OPG_APIS.MIGRATE_PG_TO_CURRENT(:1, DOP=>8); END;";
+    }
+    else
+    {
+      System.out.println ("Creating indexes ...");
+      finishPG = "BEGIN OPG_APIS.CREATE_PG(:1, DOP=>8, OPTIONS=>'SKIP_TABLE=T'); END;";
+    }
+    CallableStatement cs = conn.prepareCall(finishPG);
+    cs.setString(1, graphname);
+    cs.execute();
+    System.out.println ("...completed in " +
+      ((Instant.now().toEpochMilli()-startFinish.toEpochMilli())/1000) + " sec ");
+
+    // Log final time
+    System.out.println ("Graph "+graphname.toUpperCase()+" processed in " +
+      ((Instant.now().toEpochMilli()-start.toEpochMilli())/1000) + " sec ");
+    System.out.println ("- "+vCounter+" vertices");
+    System.out.println ("- "+eCounter+" edges");
   }
 
   // Write a vertex to database
@@ -374,7 +381,7 @@ public class GraphMLImporter {
       for (Map.Entry<String, String> e : vProps.entrySet()) {
         String k = e.getKey();
         String v = e.getValue();
-        int t = keyTypeMap.get(k);
+        int t = keyTypeMap.getOrDefault(k,1);
         vInsert.setLong   (1, vid);                   // VID (vertex id)
         vInsert.setString (2, vLabel.toUpperCase());  // VL  (label)
         vInsert.setString (3, k.toUpperCase());       // K   (property name)
@@ -382,7 +389,6 @@ public class GraphMLImporter {
         vInsert.setString (5, v);                     // V   (string value)
         if (t==2|t==3||t==4||t==7)                    // Is this a numeric value ?
           vInsert.setString (6, v);                   // VN  (numeric value)
-          // vInsert.setDouble (6, Double.parseDouble(v));                   // VN  (numeric value)
         else
           vInsert.setString (6, null);                // VN  (numeric value) set to NULL
         vInsert.addBatch();
@@ -407,7 +413,7 @@ public class GraphMLImporter {
       for (Map.Entry<String, String> e : eProps.entrySet()) {
         String k = e.getKey();
         String v = e.getValue();
-        int t = keyTypeMap.get(k);
+        int t = keyTypeMap.getOrDefault(k,1);
         eInsert.setLong   (1, eid);                   // EID  (vertex id)
         eInsert.setLong   (2, svid);                  // SVID (source vertex id)
         eInsert.setLong   (3, dvid);                  // DVID (destination vertex id)
