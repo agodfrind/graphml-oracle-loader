@@ -10,8 +10,11 @@ public class GraphMLImporter {
 
   static boolean isNeo4J = false;
   static boolean buildTopology = true;
+  static boolean makeUppercase = true;
+
   static Instant start;
   static Instant previous;
+
   static Map<String, String> keyIdMap = new HashMap<>();
   static Map<String, Integer> keyTypeMap = new HashMap<>();
 
@@ -42,6 +45,7 @@ public class GraphMLImporter {
         case "-s" : case "--skipItems": skipItems  = Integer.parseInt(args[i+1]); break;
         case "-n" : case "--numItems":  numItems   = Integer.parseInt(args[i+1]); break;
         case "-o" : case "--topology":  buildTopology = args[i+1].toUpperCase().equals("YES") ? true : false; break;
+        case "-U" : case "--uppercase": makeUppercase = args[i+1].toUpperCase().equals("YES") ? true : false; break;
       }
       i++;
     }
@@ -59,6 +63,7 @@ public class GraphMLImporter {
       System.out.println ("  -s/--skipItem  <skipItems>:        number of items to skip (0 = nothing to skip)");
       System.out.println ("  -n/--numItems  <numItems>:         number of items to read (0 = until the ends)");
       System.out.println ("  -o/--topology  YES/NO:             [YES]: populate topology tables / NO: do not populate");
+      System.out.println ("  -U/--uppercase YES/NO:             [YES]: make all property names and labels uppercase");
       System.exit(0);
     }
 
@@ -251,11 +256,11 @@ public class GraphMLImporter {
             eProps = new HashMap<>();
             break;
 
-          // Process <data> element (vertex/edge property)
-          // <data key="COUNTRY">United States</data>
+          // Process <data> element (vertex/edge property or label)
+          // <data key="Country">United States</data>
+          // <data key="labelV">Customer</data>
           case "data":
             String key = xmlReader.getAttributeValue(null, "key");
-            String dataAttributeName = keyIdMap.get(key);
             String value = xmlReader.getElementText();
             if (inV) {
               if (key.equals(vLabelKey))
@@ -381,10 +386,14 @@ public class GraphMLImporter {
       for (Map.Entry<String, String> e : vProps.entrySet()) {
         String k = e.getKey();
         String v = e.getValue();
+        if (makeUppercase) {
+          k = k.toUpperCase();
+          vLabel = vLabel.toUpperCase();
+        }
         int t = keyTypeMap.getOrDefault(k,1);
         vInsert.setLong   (1, vid);                   // VID (vertex id)
-        vInsert.setString (2, vLabel.toUpperCase());  // VL  (label)
-        vInsert.setString (3, k.toUpperCase());       // K   (property name)
+        vInsert.setString (2, vLabel);                // VL  (label)
+        vInsert.setString (3, k);                     // K   (property name)
         vInsert.setLong   (4, t);                     // T   (data type)
         vInsert.setString (5, v);                     // V   (string value)
         if (t==2|t==3||t==4||t==7)                    // Is this a numeric value ?
@@ -396,7 +405,7 @@ public class GraphMLImporter {
     } else {
       // Write empty property (when a vertex has no properties)
       vInsert.setLong   (1, vid);                     // VID (vertex id)
-      vInsert.setString (2, vLabel.toUpperCase());    // VL  (label)
+      vInsert.setString (2, vLabel);                  // VL  (label)
       vInsert.setString (3, null);                    // K   (property name)
       vInsert.setString (4, null);                    // T   (data type)
       vInsert.setString (5, null);                    // V   (string value)
@@ -413,12 +422,16 @@ public class GraphMLImporter {
       for (Map.Entry<String, String> e : eProps.entrySet()) {
         String k = e.getKey();
         String v = e.getValue();
+        if (makeUppercase) {
+          k = k.toUpperCase();
+          eLabel = eLabel.toUpperCase();
+        }
         int t = keyTypeMap.getOrDefault(k,1);
         eInsert.setLong   (1, eid);                   // EID  (vertex id)
         eInsert.setLong   (2, svid);                  // SVID (source vertex id)
         eInsert.setLong   (3, dvid);                  // DVID (destination vertex id)
-        eInsert.setString (4, eLabel.toUpperCase());  // EL   (label)
-        eInsert.setString (5, k.toUpperCase());       // K    (property name)
+        eInsert.setString (4, eLabel);                // EL   (label)
+        eInsert.setString (5, k);                     // K    (property name)
         eInsert.setLong   (6, t);                     // T    (data type)
         eInsert.setString (7, v);                     // V    (string value)
         if (t==2|t==3||t==4||t==7)                    // Is this a numeric value ?
@@ -432,7 +445,7 @@ public class GraphMLImporter {
       eInsert.setLong   (1, eid);                   // EID  (vertex id)
       eInsert.setLong   (2, svid);                  // SVID (source vertex id)
       eInsert.setLong   (3, dvid);                  // DVID (destination vertex id)
-      eInsert.setString (4, eLabel.toUpperCase());  // EL   (label)
+      eInsert.setString (4, eLabel);                // EL   (label)
       eInsert.setString (5, null);                  // K    (property name)
       eInsert.setString (6, null);                  // T    (data type)
       eInsert.setString (7, null);                  // V    (string value)

@@ -33,7 +33,6 @@ The labels are in properties `labelV` for vertices and `labelE` for edges.
 ```
 The labels are in properties `labels` for vertices and `label` for edges. The vertex labels are prefixed with a `:` (removed by the importer). Note also that the identifiers of vertices and edges are preceded by letter `n` or `e`. Those are also removed.
 
-
 GraphML files do not impose any specific order on the content: usually, all nodes appear before all edges, but that is not a requirement. The importer does not assume any specific order.
 
 
@@ -64,6 +63,8 @@ Parameters:
   -s/--skipItem  <skipItems>:        number of items to skip (0 = nothing to skip)
   -n/--numItems  <numItems>:         number of items to read (0 = until the ends)
   -o/--topology  YES/NO:             [YES]: populate topology tables / NO: do not populate
+  -U/--uppercase YES/NO:             [YES]: make all property names and labels uppercase"
+
 ```
 Read a GraphML file in *Tinkerpop* encoding (this is the default when no format is specified)
 ```
@@ -121,6 +122,8 @@ By default, the above examples will create a new graph.
 **-n** or **--numItems**: number of items to read (0 = until the ends)
 
 **-o** or **--topology**: YES or NO. If YES (the default), the topology tables (xxxxVD$ and xxxxGT$) are populated with information extracted from the main xxxxVT$ (vertices) and xxxxGE$ (edges) tables. Those tables are only used when running PGQL queries directly on the database graph. They are not used when using the graph in-memory in the PGX server. Avoiding the creation of those tables reduces the storage footprint of the graph, and reduces the time needed to load the graph.
+
+**-U** or **--uppercase**: YES or NO. If YES (the default), the labels and property names are converted to uppercase. If NO, they retain the original case.
 
 ## Usage notes
 
