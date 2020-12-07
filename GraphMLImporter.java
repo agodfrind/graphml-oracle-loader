@@ -10,6 +10,7 @@ public class GraphMLImporter {
 
   static boolean isNeo4J = false;
   static boolean buildTopology = true;
+  static boolean buildIndexes = true;
   static boolean makeUppercase = true;
 
   static Instant start;
@@ -45,6 +46,7 @@ public class GraphMLImporter {
         case "-s" : case "--skipItems": skipItems  = Integer.parseInt(args[i+1]); break;
         case "-n" : case "--numItems":  numItems   = Integer.parseInt(args[i+1]); break;
         case "-o" : case "--topology":  buildTopology = args[i+1].toUpperCase().equals("YES") ? true : false; break;
+        case "-i" : case "--index":     buildIndexes = args[i+1].toUpperCase().equals("YES") ? true : false; break;
         case "-U" : case "--uppercase": makeUppercase = args[i+1].toUpperCase().equals("YES") ? true : false; break;
       }
       i++;
@@ -56,13 +58,14 @@ public class GraphMLImporter {
       System.out.println ("  -d/--jdbcUrl   <JDBC connection>:  JDBC connection string (jdbc:oracle:thin:@server:port/service)");
       System.out.println ("  -u/--username  <User>:             Database user name");
       System.out.println ("  -p/--password  <Password>:         Database user password");
-      System.out.println ("  -g/--graphnam  <graphname>:        Name of the graph to create or load into");
+      System.out.println ("  -g/--graphname <graphname>:        Name of the graph to create or load into");
       System.out.println ("  -a/--action    <action>:           [CREATE] or APPEND or REPLACE or TRUNCATE");
       System.out.println ("  -t/--format    <format>:           NEO4J or [TINKERPOP]");
       System.out.println ("  -b/--batchsize <batchsize>:        commit interval (0 = only commit at the end)");
       System.out.println ("  -s/--skipItem  <skipItems>:        number of items to skip (0 = nothing to skip)");
       System.out.println ("  -n/--numItems  <numItems>:         number of items to read (0 = until the ends)");
       System.out.println ("  -o/--topology  YES/NO:             [YES]: populate topology tables / NO: do not populate");
+      System.out.println ("  -i/--indexing  YES/NO:             [YES]: create indexes and triggers / NO: do not create");
       System.out.println ("  -U/--uppercase YES/NO:             [YES]: make all property names and labels uppercase");
       System.exit(0);
     }
@@ -355,21 +358,22 @@ public class GraphMLImporter {
 
     // Build topology and/or indexes
     Instant startFinish = Instant.now();
-    String finishPG;
+    String finishPG = null;
     if (buildTopology) {
       System.out.println ("Creating topology and indexes ...");
       finishPG = "BEGIN OPG_APIS.MIGRATE_PG_TO_CURRENT(:1, DOP=>8); END;";
     }
-    else
-    {
+    else if (buildIndexes) {
       System.out.println ("Creating indexes ...");
       finishPG = "BEGIN OPG_APIS.CREATE_PG(:1, DOP=>8, OPTIONS=>'SKIP_TABLE=T'); END;";
     }
-    CallableStatement cs = conn.prepareCall(finishPG);
-    cs.setString(1, graphname);
-    cs.execute();
-    System.out.println ("...completed in " +
-      ((Instant.now().toEpochMilli()-startFinish.toEpochMilli())/1000) + " sec ");
+    if (finishPG != null) {
+      CallableStatement cs = conn.prepareCall(finishPG);
+      cs.setString(1, graphname);
+      cs.execute();
+      System.out.println ("...completed in " +
+        ((Instant.now().toEpochMilli()-startFinish.toEpochMilli())/1000) + " sec ");
+    }
 
     // Log final time
     System.out.println ("Graph "+graphname.toUpperCase()+" processed in " +

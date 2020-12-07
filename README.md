@@ -56,13 +56,14 @@ Parameters:
   -d/--jdbcUrl   <JDBC connection>:  JDBC connection string (jdbc:oracle:thin:@server:port/service)
   -u/--username  <User>:             Database user name
   -p/--password  <Password>:         Database user password
-  -g/--graphnam  <graphname>:        Name of the graph to create or load into
+  -g/--graphname <graphname>:        Name of the graph to create or load into
   -a/--action    <action>:           [CREATE] or APPEND or REPLACE
   -t/--format    <format>:           NEO4J or [TINKERPOP]
   -b/--batchsize <batchsize>:        commit interval (0 = only commit at the end)
   -s/--skipItem  <skipItems>:        number of items to skip (0 = nothing to skip)
   -n/--numItems  <numItems>:         number of items to read (0 = until the ends)
   -o/--topology  YES/NO:             [YES]: populate topology tables / NO: do not populate
+  -i/--indexing  YES/NO:             [YES]: create indexes and triggers / NO: do not create
   -U/--uppercase YES/NO:             [YES]: make all property names and labels uppercase"
 
 ```
@@ -109,7 +110,7 @@ By default, the above examples will create a new graph.
 
 **-p** or **--password**: Database user password
 
-**-g** or **--graphnam**: Name of the graph to create or load into
+**-g** or **--graphname**: Name of the graph to create or load into
 
 **-a** or **--action**:   Import action. *CREATE* (default) creates a new graph. *APPEND* adds to an existing graph. *REPLACE* drops the existing graph and creates a new one. *TRUNCATE* truncates the existing graph and loads the new content.
 
@@ -121,7 +122,15 @@ By default, the above examples will create a new graph.
 
 **-n** or **--numItems**: number of items to read (0 = until the ends)
 
-**-o** or **--topology**: YES or NO. If YES (the default), the topology tables (xxxxVD$ and xxxxGT$) are populated with information extracted from the main xxxxVT$ (vertices) and xxxxGE$ (edges) tables. Those tables are only used when running PGQL queries directly on the database graph. They are not used when using the graph in-memory in the PGX server. Avoiding the creation of those tables reduces the storage footprint of the graph, and reduces the time needed to load the graph.
+**-o** or **--topology**: YES or NO. If YES (the default), the topology tables (xxxxVD$ and xxxxGT$) are populated with information extracted from the main graph tables (xxxxVT$ = vertices and xxxxGE$ = edges). The topology tables are only used when running PGQL queries directly on the database graph. They are not used when using the graph in-memory in the PGX server. Avoiding the creation of those tables reduces the storage footprint of the graph, and reduces the time needed to load the graph.
+
+To populate the topology tables manually after the import, use the `OPG_APIS.MIGRATE_PG_TO_CURRENT(<graph_name>)` procedure.
+
+Note that populating the topology tables implies the creation of indexes on all tables as well as the creation of the triggers on the main tables (xxxxVT$ and xxxxGE$) to automatically update the topology tables (xxxxVD$ and xxxxGT$), i.e. **-o** implies **-i**.
+
+**-i** or **--indexing**: YES or NO. If YES (the default), indexes are automatically created on main graph tables (xxxxVT$ = vertices and xxxxGE$ = edges). Use **-i no** to skip this step if you need to do any manual updates to the graph tables (such as changing property or label names).
+
+To create the indexes manually after the import and all updates use the `OPG_APIS.CREATE_PG(<graph_name>, OPTIONS=>'SKIP_TABLE=T')` procedure. This will add the indexes without touching the actual graph tables.
 
 **-U** or **--uppercase**: YES or NO. If YES (the default), the labels and property names are converted to uppercase. If NO, they retain the original case.
 
